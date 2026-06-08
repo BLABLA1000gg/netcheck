@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>netcheck — Network Diagnostics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    .tab-active { background: #2563eb; color: #fff; }
+    .tab-inactive { background: #1e293b; color: #94a3b8; }
+    .tab-inactive:hover { background: #334155; color: #e2e8f0; }
+    pre { white-space: pre-wrap; word-break: break-all; }
+    .result-card { animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .spinner { border: 3px solid #1e293b; border-top-color: #2563eb; border-radius: 50%; width: 22px; height: 22px; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .badge-open   { background: #14532d; color: #4ade80; }
+    .badge-closed { background: #1c1917; color: #57534e; }
+    .badge-valid  { background: #14532d; color: #4ade80; }
+    .badge-invalid { background: #450a0a; color: #f87171; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+    <svg class="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+    </svg>
+    <span class="font-bold text-lg tracking-tight">netcheck</span>
+    <span class="text-slate-500 text-sm ml-1">Network Diagnostics</span>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-8">
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-6 bg-slate-900 p-1 rounded-lg w-fit">
+      <button onclick="setTab('dns')"   id="tab-dns"   class="tab-active   px-4 py-1.5 rounded-md text-sm font-medium transition-all">DNS</button>
+      <button onclick="setTab('ssl')"   id="tab-ssl"   class="tab-inactive px-4 py-1.5 rounded-md text-sm font-medium transition-all">SSL</button>
+      <button onclick="setTab('http')"  id="tab-http"  class="tab-inactive px-4 py-1.5 rounded-md text-sm font-medium transition-all">HTTP</button>
+      <button onclick="setTab('ports')" id="tab-ports" class="tab-inactive px-4 py-1.5 rounded-md text-sm font-medium transition-all">Ports</button>
+      <button onclick="setTab('ip')"    id="tab-ip"    class="tab-inactive px-4 py-1.5 rounded-md text-sm font-medium transition-all">IP Info</button>
+    </div>
+
+    <!-- Input -->
+    <div class="flex gap-2 mb-6">
+      <input id="query" type="text"
+        class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 placeholder-slate-500"
+        placeholder="Enter domain or IP..." onkeydown="if(event.key==='Enter') run()" />
+      <button onclick="run()"
+        class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
+        Check
+      </button>
+    </div>
+
+    <!-- Spinner -->
+    <div id="spinner" class="hidden flex justify-center py-8">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Result -->
+    <div id="result"></div>
+  </main>
+
+  <script>
+    let currentTab = 'dns';
+
+    function setTab(tab) {
+      currentTab = tab;
+      ['dns','ssl','http','ports','ip'].forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        el.className = (t === tab ? 'tab-active' : 'tab-inactive')
+          + ' px-4 py-1.5 rounded-md text-sm font-medium transition-all';
+      });
+      // Update placeholder
+      const placeholders = {
+        dns: 'Enter domain (e.g. github.com)',
+        ssl: 'Enter hostname (e.g. github.com)',
+        http: 'Enter URL (e.g. https://github.com)',
+        ports: 'Enter host (e.g. github.com)',
+        ip: 'Enter IP address (e.g. 8.8.8.8)',
+      };
+      document.getElementById('query').placeholder = placeholders[tab];
+      document.getElementById('result').innerHTML = '';
+    }
+
+    async function run() {
+      const q = document.getElementById('query').value.trim();
+      if (!q) return;
+      show_spinner(true);
+      document.getElementById('result').innerHTML = '';
+      try {
+        let data;
+        if (currentTab === 'dns')   data = await api(`/api/dns/${encodeURIComponent(q)}`);
+        if (currentTab === 'ssl')   data = await api(`/api/ssl/${encodeURIComponent(q)}`);
+        if (currentTab === 'http')  data = await api(`/api/http?url=${encodeURIComponent(q)}`);
+        if (currentTab === 'ports') data = await api(`/api/ports/${encodeURIComponent(q)}`);
+        if (currentTab === 'ip')    data = await api(`/api/ip/${encodeURIComponent(q)}`);
+        render(data);
+      } catch(e) {
+        document.getElementById('result').innerHTML =
+          `<div class="bg-red-950 border border-red-800 rounded-lg p-4 text-red-400 text-sm">${e.message}</div>`;
+      } finally {
+        show_spinner(false);
+      }
+    }
+
+    async function api(path) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }
+
+    function show_spinner(v) {
+      document.getElementById('spinner').className = v ? 'flex justify-center py-8' : 'hidden';
+    }
+
+    function card(content) {
+      return `<div class="result-card bg-slate-900 border border-slate-800 rounded-xl p-5">${content}</div>`;
+    }
+
+    function row(label, value) {
+      return `<div class="flex justify-between py-1.5 border-b border-slate-800 last:border-0 text-sm">
+        <span class="text-slate-400">${label}</span>
+        <span class="text-slate-100 font-mono text-right max-w-xs">${value}</span>
+      </div>`;
+    }
+
+    function render(data) {
+      const el = document.getElementById('result');
+      if (currentTab === 'dns') {
+        if (data.error) { el.innerHTML = card(`<p class="text-red-400 text-sm">${data.error}</p>`); return; }
+        const types = Object.entries(data.records);
+        if (!types.length) { el.innerHTML = card('<p class="text-slate-400 text-sm">No records found.</p>'); return; }
+        const rows = types.map(([type, vals]) =>
+          vals.map(v => `<div class="flex gap-3 py-1.5 border-b border-slate-800 last:border-0 text-sm">
+            <span class="text-blue-400 font-mono w-12 shrink-0">${type}</span>
+            <span class="text-slate-100 font-mono break-all">${v}</span>
+          </div>`).join('')
+        ).join('');
+        el.innerHTML = card(`<p class="text-xs text-slate-500 mb-3">${data.domain}</p>${rows}`);
+      }
+
+      if (currentTab === 'ssl') {
+        const badge = data.valid
+          ? '<span class="badge-valid px-2 py-0.5 rounded text-xs font-medium">Valid</span>'
+          : '<span class="badge-invalid px-2 py-0.5 rounded text-xs font-medium">Invalid</span>';
+        let rows = row('Status', badge);
+        if (data.issued_to)    rows += row('Issued to', data.issued_to);
+        if (data.issued_by)    rows += row('Issued by', data.issued_by);
+        if (data.expires)      rows += row('Expires', data.expires);
+        if (data.days_remaining !== null && data.days_remaining !== undefined)
+          rows += row('Days remaining', `<span class="${data.days_remaining < 30 ? 'text-yellow-400' : 'text-green-400'}">${data.days_remaining}</span>`);
+        if (data.error)        rows += row('Error', `<span class="text-red-400">${data.error}</span>`);
+        el.innerHTML = card(rows);
+      }
+
+      if (currentTab === 'http') {
+        const code = data.status_code;
+        const color = code >= 500 ? 'text-red-400' : code >= 400 ? 'text-yellow-400' : code >= 300 ? 'text-blue-400' : 'text-green-400';
+        let rows = '';
+        if (code)              rows += row('Status', `<span class="${color} font-bold">${code}</span>`);
+        if (data.response_time_ms) rows += row('Response time', `${data.response_time_ms} ms`);
+        if (data.server)       rows += row('Server', data.server);
+        if (data.content_type) rows += row('Content-Type', data.content_type);
+        if (data.redirect_url) rows += row('Redirected to', `<a href="${data.redirect_url}" target="_blank" class="text-blue-400 underline truncate">${data.redirect_url}</a>`);
+        if (data.error)        rows += row('Error', `<span class="text-red-400">${data.error}</span>`);
+        el.innerHTML = card(rows);
+      }
+
+      if (currentTab === 'ports') {
+        if (data.error) { el.innerHTML = card(`<p class="text-red-400 text-sm">${data.error}</p>`); return; }
+        const open = data.ports.filter(p => p.open);
+        const header = `<div class="flex justify-between mb-3">
+          <span class="text-sm text-slate-400">${data.host} <span class="text-slate-600">(${data.resolved_ip})</span></span>
+          <span class="text-sm text-green-400">${open.length} open</span>
+        </div>`;
+        const rows = data.ports.map(p => `
+          <div class="flex items-center gap-3 py-1.5 border-b border-slate-800 last:border-0 text-sm">
+            <span class="font-mono w-14 text-slate-300">${p.port}</span>
+            <span class="w-20 text-slate-500">${p.service || ''}</span>
+            <span class="${p.open ? 'badge-open' : 'badge-closed'} px-2 py-0.5 rounded text-xs">
+              ${p.open ? 'open' : 'closed'}
+            </span>
+            ${p.open && p.response_time_ms ? `<span class="text-slate-500 text-xs ml-auto">${p.response_time_ms}ms</span>` : ''}
+          </div>`).join('');
+        el.innerHTML = card(header + rows);
+      }
+
+      if (currentTab === 'ip') {
+        const fields = [
+          ['IP', data.ip], ['City', data.city], ['Region', data.region],
+          ['Country', data.country_name], ['Org / ASN', data.org],
+          ['Timezone', data.timezone], ['Latitude', data.latitude],
+          ['Longitude', data.longitude],
+        ];
+        const rows = fields.filter(([,v]) => v).map(([k,v]) => row(k, v)).join('');
+        el.innerHTML = card(rows);
+      }
+    }
+  </script>
+</body>
+</html>
