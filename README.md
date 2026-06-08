@@ -2,7 +2,7 @@
 
 Network diagnostics tool — check DNS records, SSL certificates, HTTP status, open ports, and IP geolocation from the browser.
 
-**Live:** [netcheck on Railway](https://netcheck.up.railway.app) *(deploy link — update after Railway deployment)*
+**Live:** [netcheck on Railway](https://netcheck.up.railway.app) 
 
 ![netcheck screenshot](docs/screenshot.png)
 
